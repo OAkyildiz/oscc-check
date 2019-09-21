@@ -58,20 +58,23 @@ class DebugModules(object):
 
         while True:
 
-            success = self.enable_module(self.brake)
+            if self.brake:
+                success = self.enable_module(self.brake)
 
-            if not success:
-                continue
+                if not success:
+                    continue
 
-            success = self.enable_module(self.steering)
+            if self.steering:
+                success = self.enable_module(self.steering)
 
-            if not success:
-                continue
+                if not success:
+                    continue
 
-            success = self.enable_module(self.throttle)
+            if self.throttle:
+                success = self.enable_module(self.throttle)
 
-            if not success:
-                continue
+                if not success:
+                    continue
 
             break
 
@@ -79,9 +82,9 @@ class DebugModules(object):
         """
         Disable all OSCC modules.
         """
-        self.disable_module(self.brake)
-        self.disable_module(self.steering)
-        self.disable_module(self.throttle)
+        if self.brake: self.disable_module(self.brake)
+        if self.steering: self.disable_module(self.steering)
+        if self.throttle: self.disable_module(self.throttle)
 
     def enable_module(self, module):
         """
@@ -342,6 +345,13 @@ def check_vehicle_arg(arg):
         raise ValueError('Unable to target vehicle',
                          arg + '. Options are', vehicles)
 
+    
+def init_obd_can(arg):
+    """
+    If an OBD CAN channel is specified, initialize a bus object.
+    """
+    return (CanBus(vehicle=args['--vehicle'], bustype=args['--bustype'], arg) if arg else None)
+
 
 def main(args):
     if args['--version']:
@@ -354,10 +364,14 @@ def main(args):
         vehicle=args['--vehicle'],
         bustype=args['--bustype'],
         channel=args['--channel'])
-
-    brakes = OsccModule(base_arbitration_id=0x70, module_name='brake')
-    steering = OsccModule(base_arbitration_id=0x80, module_name='steering')
-    throttle = OsccModule(base_arbitration_id=0x90, module_name='throttle')
+    
+    # if the arg is not null a CAN bus is set for the additional OBD CAN
+    car_can = init_obd_can(args['--carcan'])
+    
+    # Init OSCC module instances unless specified
+    brakes = (None if args['--no-brakes'] else OsccModule(base_arbitration_id=0x70, module_name='brake'))
+    steering = (None if args['--no-steering'] else OsccModule(base_arbitration_id=0x80, module_name='steering'))
+    throttle = (None if args['--no-throttle'] else OsccModule(base_arbitration_id=0x90, module_name='throttle'))
 
     modules = DebugModules(bus, brakes, steering, throttle)
 
@@ -383,41 +397,44 @@ def main(args):
     # 5. Verify that the steering wheel angle increased or decreased accordingly.
     # 6. Disable each OSCC module.
     while True:
-
+        # Visually distinguish disable steps from the following enable steps
+        print("|Enable Modules -----------------------------------------------------------------|")
         modules.enable()
 
         # Visually distinguish enable steps from the following brake validation
-        print("|Brake Test --------------------------------------------------------------------|")
+        if brakes:
+            print("|Brake Test --------------------------------------------------------------------|")
 
-        pressure_cmd = 0.0
-        modules.command_brake_module(pressure_cmd, expect=None)
+            pressure_cmd = 0.0
+            modules.command_brake_module(pressure_cmd, expect=None)
 
-        pressure_cmd = 0.5
-        modules.command_brake_module(pressure_cmd, expect='increase')
+            pressure_cmd = 0.5
+            modules.command_brake_module(pressure_cmd, expect='increase')
 
-        pressure_cmd = 0.0
-        modules.command_brake_module(pressure_cmd, expect='decrease')
+            pressure_cmd = 0.0
+            modules.command_brake_module(pressure_cmd, expect='decrease')
 
-        pressure_cmd = 0.3
-        modules.command_brake_module(pressure_cmd, expect='increase')
+            pressure_cmd = 0.3
+            modules.command_brake_module(pressure_cmd, expect='increase')
 
-        pressure_cmd = 0.0
-        modules.command_brake_module(pressure_cmd, expect='decrease')
+            pressure_cmd = 0.0
+            modules.command_brake_module(pressure_cmd, expect='decrease')
 
         # Visually distinguish brake validation from the following steering wheel validation
-        print("|Steering Test ------------------------------------------------------------------|")
+        if steering:
+            print("|Steering Test ------------------------------------------------------------------|")
 
-        torque_cmd = -0.1
-        modules.command_steering_module(torque_cmd, expect=None)
+            torque_cmd = -0.1
+            modules.command_steering_module(torque_cmd, expect=None)
 
-        torque_cmd = 0.1
-        modules.command_steering_module(torque_cmd, expect=None)
+            torque_cmd = 0.1
+            modules.command_steering_module(torque_cmd, expect=None)
 
-        torque_cmd = 0.15
-        modules.command_steering_module(torque_cmd, expect='increase')
+            torque_cmd = 0.15
+            modules.command_steering_module(torque_cmd, expect='increase')
 
-        torque_cmd = -0.15
-        modules.command_steering_module(torque_cmd, expect='decrease')
+            torque_cmd = -0.15
+            modules.command_steering_module(torque_cmd, expect='decrease')
 
         # Visually distinguish throttle validation from the following disable steps
         print("|Disable Modules ----------------------------------------------------------------|")
@@ -427,8 +444,7 @@ def main(args):
         if not args['--loop']:
             break
 
-        # Visually distinguish disable steps from the following enable steps
-        print("|Enable Modules -----------------------------------------------------------------|")
+        
 
 
 if __name__ == "__main__":
