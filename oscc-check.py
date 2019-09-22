@@ -1,5 +1,8 @@
 #!/usr/bin/python3
-"""Usage: oscc-check.py (-V <vehicle>) [-hdelv] [-b <bustype>] [-c <channel>]
+"""Usage: 
+oscc-check.py (-V <vehicle>) [-hdelv] [-b <bustype>] [-c <channel>] [-C <carcan>] [-BST]
+oscc-check.py -v
+
 
 Options:
     -h --help                            Display this information
@@ -11,6 +14,13 @@ Options:
     -b --bustype <bustype>               CAN bus type [default: socketcan_native]
                                          (for more see https://python-can.readthedocs.io/en/2.1.0/interfaces.html)
     -c <channel>, --channel <channel>    Specify CAN channel, [default: can0]
+    -C <carcan>, --carcan <carcan>       Vehicle CAN channel for OBD-II output
+    
+    -B, --no-brakes                    Disable brake tests
+    -S, --no-steering                    Disable steering tests
+    -T, --no-throttle                    Disable throttle tests
+    
+    
     -v --version                         Display version information
 """
 
@@ -40,7 +50,7 @@ class DebugModules(object):
     tool relies on.
     """
 
-    def __init__(self, bus, brake, steering, throttle):
+    def __init__(self, bus, brake, steering, throttle,car_can = None):
         """
         Initialize references to modules and CAN bus as well as the 'last_measurement' variable
         that allows this class to track whether expected increases and decreases occurred.
@@ -50,6 +60,7 @@ class DebugModules(object):
         self.steering = steering
         self.throttle = throttle
         self.last_measurement = None
+        self.car_can = (car_can if car_can else self.bus)
 
     def enable(self):
         """
@@ -190,13 +201,13 @@ class DebugModules(object):
               Style.RESET_ALL, 'measuring brake pressure')
 
         if expect == 'increase':
-            report = self.bus.check_brake_pressure(
+            report = self.car_can.check_brake_pressure(
                 timeout=1.0, increase_from=self.last_measurement)
         elif expect == 'decrease':
-            report = self.bus.check_brake_pressure(
+            report = self.car_can.check_brake_pressure(
                 timeout=1.0, decrease_from=self.last_measurement)
         else:
-            report = self.bus.check_brake_pressure(timeout=1.0)
+            report = self.car_can.check_brake_pressure(timeout=1.0)
 
         if report.success is True:
             print(
@@ -255,15 +266,15 @@ class DebugModules(object):
         report = Report()
         report.success = False
         if expect == 'increase':
-            report = self.bus.check_steering_wheel_angle(
+            report = self.car_can.check_steering_wheel_angle(
                 timeout=1.0,
                 increase_from=self.last_measurement)
         elif expect == 'decrease':
-            report = self.bus.check_steering_wheel_angle(
+            report = self.car_can.check_steering_wheel_angle(
                 timeout=1.0,
                 decrease_from=self.last_measurement)
         else:
-            report = self.bus.check_steering_wheel_angle(timeout=1.0)
+            report = self.car_can.check_steering_wheel_angle(timeout=1.0)
 
         if report.success is True:
             print(
@@ -317,7 +328,7 @@ class DebugModules(object):
         print(Fore.MAGENTA + ' status:',
               Style.RESET_ALL, ' measuring wheel speed')
 
-        report = self.bus.check_wheel_speed(timeout=1.0)
+        report = self.car_can.check_wheel_speed(timeout=1.0)
 
         if report.success is True and report.value is not None:
             print(
@@ -346,11 +357,11 @@ def check_vehicle_arg(arg):
                          arg + '. Options are', vehicles)
 
     
-def init_obd_can(arg):
+def init_obd_can(args):
     """
     If an OBD CAN channel is specified, initialize a bus object.
     """
-    return (CanBus(vehicle=args['--vehicle'], bustype=args['--bustype'], arg) if arg else None)
+    return (CanBus(vehicle=args['--vehicle'], bustype=args['--bustype'], channel=args['--carcan']) if args['--carcan'] else None)
 
 
 def main(args):
@@ -366,14 +377,15 @@ def main(args):
         channel=args['--channel'])
     
     # if the arg is not null a CAN bus is set for the additional OBD CAN
-    car_can = init_obd_can(args['--carcan'])
+    #car_can = init_obd_can(args['--carcan']
+    car_can = init_obd_can(args)
     
     # Init OSCC module instances unless specified
     brakes = (None if args['--no-brakes'] else OsccModule(base_arbitration_id=0x70, module_name='brake'))
     steering = (None if args['--no-steering'] else OsccModule(base_arbitration_id=0x80, module_name='steering'))
     throttle = (None if args['--no-throttle'] else OsccModule(base_arbitration_id=0x90, module_name='throttle'))
 
-    modules = DebugModules(bus, brakes, steering, throttle)
+    modules = DebugModules(bus, brakes, steering, throttle, car_can)
 
     # Initialize module for printing colored text to stdout
     colorama.init()
@@ -387,7 +399,7 @@ def main(args):
 
     # Each section or step of the following loop is distinguished from the next by this separator.
     # The output begins with this separator for visually consistent output.
-    print("|Enable Modules -----------------------------------------------------------------|")
+    #print("|Enable Modules -----------------------------------------------------------------|")
 
     # This `while` loop repeats the same basic steps on each iteration, they are as follows:
     # 1. Enable each OSCC module.
